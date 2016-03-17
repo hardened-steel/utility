@@ -55,7 +55,7 @@ namespace utility {
 		template<class U, bool C> friend class instance;
 	protected:
 		mutable details::instance_control_block* cblock;
-		mutable T* object;
+		T* object;
 	protected:
 		void reset() const {
 			if(nullptr != cblock) delete cblock;
@@ -68,25 +68,79 @@ namespace utility {
 		instance& operator=(const instance& other) = delete;
 		instance& operator=(instance& other) = delete;
 
-		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(const instance<D, false>& other)
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance(const instance<D, false>& other)
 		: cblock(new details::unique_control_block<T>(other.get())), object((T*)cblock->getptr()) {}
-		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(instance<D, false>& other)
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance(instance<D, false>& other)
 		: cblock(new details::unique_control_block<T>(other.get())), object((T*)cblock->getptr()) {}
-		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(const instance<D, false>&& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { other.cblock = nullptr; }
-		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(instance<D, false>&& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { other.cblock = nullptr; }
 
 		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(const instance<D, true>& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { cblock->inc(); }
+		: cblock(other.cblock), object(static_cast<T*>(other.object)) { cblock->inc(); }
 		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(instance<D, true>& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { cblock->inc(); }
-		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(const instance<D, true>&& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { other.cblock = nullptr; }
-		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(instance<D, true>&& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { other.cblock = nullptr; }
+		: cblock(other.cblock), object(static_cast<T*>(other.object)) { cblock->inc(); }
+
+		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(const instance<D>&& other)
+		: cblock(other.cblock), object(static_cast<T*>(other.object)) { other.cblock = nullptr; }
+		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(instance<D>&& other)
+		: cblock(other.cblock), object(static_cast<T*>(other.object)) { other.cblock = nullptr; }
+
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance& operator=(const instance<D, false>& other) {
+			reset();
+			cblock = new details::unique_control_block<T>(other.get());
+			object = (T*)cblock->getptr();
+			return *this;
+		}
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance& operator=(instance<D, false>& other) {
+			reset();
+			cblock = new details::unique_control_block<T>(other.get());
+			object = (T*)cblock->getptr();
+			return *this;
+		}
+
+		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance& operator=(const instance<D, true>& other) {
+			reset();
+			cblock = other.cblock;
+			object = static_cast<T*>(other.object);
+			cblock->inc();
+			return *this;
+		}
+		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance& operator=(instance<D, true>& other) {
+			reset();
+			cblock = other.cblock;
+			object = static_cast<T*>(other.object);
+			cblock->inc();
+			return *this;
+		}
+
+		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance& operator=(const instance<D>&& other) {
+			reset();
+			cblock = other.cblock;
+			object = static_cast<T*>(other.object);
+			other.cblock = nullptr;
+			return *this;
+		}
+		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance& operator=(instance<D>&& other) {
+			reset();
+			cblock = other.cblock;
+			object = static_cast<T*>(other.object);
+			other.cblock = nullptr;
+			return *this;
+		}
 
 		~instance() { reset(); }
+
+		T& get() {
+			if(!cblock->unique()) {
+				auto new_cblock = cblock->clone();
+				auto offset = cblock->offset((uintptr_t)object);
+				reset();
+				cblock = new_cblock;
+				object = (T*)(cblock->getptr() + offset);
+			}
+			return *object;
+		}
+		const T& get() const { return *object; }
+		operator T&() { return get(); }
+		operator const T&() const { return get(); }
 	};
 
 	template<class T> class instance<T, true>
@@ -94,7 +148,7 @@ namespace utility {
 		template<class U, bool C> friend class instance;
 	protected:
 		mutable details::instance_control_block* cblock;
-		mutable T* object;
+		T* object;
 	protected:
 		void reset() const {
 			if(nullptr != cblock) if(cblock->dec() == 0) delete cblock;
@@ -102,24 +156,98 @@ namespace utility {
 	public:
 		template<class...TArgs>
 		instance(TArgs&&...args): cblock(new details::shared_control_block<T>(std::forward<TArgs>(args)...)), object((T*)cblock->getptr()) {}
+		instance(const instance& other): cblock(other.cblock), object(other.object) { cblock->inc(); }
+		instance(instance&& other): cblock(other.cblock), object(other.object) { other.cblock = nullptr; }
+		instance& operator=(const instance& other) {
+			reset();
+			cblock = other.cblock;
+			object = other.object;
+			cblock->inc();
+			return *this;
+		}
+		instance& operator=(instance&& other) {
+			reset();
+			cblock = other.cblock;
+			object = other.object;
+			other.cblock = nullptr;
+			return *this;
+		}
 
-		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(const instance<D, false>& other)
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance(const instance<D, false>& other)
 		: cblock(new details::shared_control_block<T>(other.get())), object((T*)cblock->getptr()) {}
-		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(instance<D, false>& other)
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance(instance<D, false>& other)
 		: cblock(new details::shared_control_block<T>(other.get())), object((T*)cblock->getptr()) {}
-		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(const instance<D, false>&& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { other.cblock = nullptr; }
-		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(instance<D, false>&& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { other.cblock = nullptr; }
+
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance(const instance<D, false>&& other)
+		: cblock(new details::shared_control_block<T>(other.get())), object((T*)cblock->getptr()) {}
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance(instance<D, false>&& other)
+		: cblock(new details::shared_control_block<T>(other.get())), object((T*)cblock->getptr()) {}
 
 		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(const instance<D, true>& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { cblock->inc(); }
+		: cblock(other.cblock), object(static_cast<T*>(other.object)) { cblock->inc(); }
 		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(instance<D, true>& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { cblock->inc(); }
+		: cblock(other.cblock), object(static_cast<T*>(other.object)) { cblock->inc(); }
+
 		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(const instance<D, true>&& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { other.cblock = nullptr; }
+		: cblock(other.cblock), object(static_cast<T*>(other.object)) { other.cblock = nullptr; }
 		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance(instance<D, true>&& other)
-		: cblock(other.cblock), object((T*)cblock->getptr()) { other.cblock = nullptr; }
+		: cblock(other.cblock), object(static_cast<T*>(other.object)) { other.cblock = nullptr; }
+
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance& operator=(const instance<D, false>& other) {
+			reset();
+			cblock = new details::shared_control_block<T>(other.get());
+			object = (T*)cblock->getptr();
+			return *this;
+		}
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance& operator=(instance<D, false>& other) {
+			reset();
+			cblock = new details::shared_control_block<T>(other.get());
+			object = (T*)cblock->getptr();
+			return *this;
+		}
+
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance& operator=(const instance<D, false>&& other) {
+			reset();
+			cblock = new details::shared_control_block<T>(other.get());
+			object = (T*)cblock->getptr();
+			return *this;
+		}
+		template<class D, class = typename std::enable_if<std::is_constructible<T, D>::value>::type> instance& operator=(instance<D, false>&& other) {
+			reset();
+			cblock = new details::shared_control_block<T>(other.get());
+			object = (T*)cblock->getptr();
+			return *this;
+		}
+
+		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance& operator=(const instance<D, true>& other) {
+			reset();
+			cblock = other.cblock;
+			object = static_cast<T*>(other.object);
+			cblock->inc();
+			return *this;
+		}
+		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance& operator=(instance<D, true>& other) {
+			reset();
+			cblock = other.cblock;
+			object = static_cast<T*>(other.object);
+			cblock->inc();
+			return *this;
+		}
+
+		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance& operator=(const instance<D, true>&& other) {
+			reset();
+			cblock = other.cblock;
+			object = static_cast<T*>(other.object);
+			other.cblock = nullptr;
+			return *this;
+		}
+		template<class D, class = typename std::enable_if<std::is_base_of<T, D>::value>::type> instance& operator=(instance<D, true>&& other) {
+			reset();
+			cblock = other.cblock;
+			object = static_cast<T*>(other.object);
+			other.cblock = nullptr;
+			return *this;
+		}
 
 		~instance() { reset(); }
 
