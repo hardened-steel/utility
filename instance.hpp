@@ -7,9 +7,9 @@
 #ifndef INSTANCE_HPP_
 #define INSTANCE_HPP_
 
-#include <typeinfo>
-#include <iostream>
 #include <type_traits>
+
+#define def_friend_boperator(Operator) template<class A, class B> friend auto operator Operator(A&& a, B&& b) -> decltype(a.get() Operator b.get()) { return a.get() Operator b.get(); }
 
 namespace utility {
 
@@ -30,21 +30,21 @@ namespace utility {
 		{
 			T object;
 		public:
-			template<class...TArgs> unique_control_block(TArgs&&...args): object(std::forward<TArgs>(args)...) { std::cout << "create::unique::" << typeid(T).name() << std::endl; }
+			template<class...TArgs> unique_control_block(TArgs&&...args): object(std::forward<TArgs>(args)...) {}
 			uintptr_t offset(uintptr_t ptr) const override { return ptr - getptr(); }
 			uintptr_t getptr() const override { return (uintptr_t)&object; }
 			instance_control_block* clone() const override { return nullptr; }
-			~unique_control_block() { std::cout << "destroy::unique::" << typeid(T).name() << std::endl; }
+			~unique_control_block() {}
 		};
 		template<class T> class shared_control_block: public details::instance_control_block
 		{
 			T object;
 		public:
-			template<class...TArgs> shared_control_block(TArgs&&...args): object(std::forward<TArgs>(args)...) { std::cout << "create::shared::" << typeid(T).name() << std::endl; }
+			template<class...TArgs> shared_control_block(TArgs&&...args): object(std::forward<TArgs>(args)...) {}
 			uintptr_t offset(uintptr_t ptr) const override { return ptr - getptr(); }
 			uintptr_t getptr() const override { return (uintptr_t)&object; }
 			instance_control_block* clone() const override { return new shared_control_block(object); }
-			~shared_control_block() { std::cout << "destroy::shared::" << typeid(T).name() << std::endl; }
+			~shared_control_block() {}
 		};
 	}
 
@@ -139,8 +139,23 @@ namespace utility {
 			return *object;
 		}
 		const T& get() const { return *object; }
+		T* operator->() { return &get(); }
+		const T* operator->() const { return &get(); }
 		operator T&() { return get(); }
 		operator const T&() const { return get(); }
+
+		def_friend_boperator(+);
+		def_friend_boperator(-);
+		def_friend_boperator(*);
+		def_friend_boperator(/);
+		def_friend_boperator(%);
+		def_friend_boperator(+=);
+		def_friend_boperator(-=);
+		def_friend_boperator(*=);
+		def_friend_boperator(/=);
+		def_friend_boperator(%=);
+		def_friend_boperator(<<);
+		def_friend_boperator(>>);
 	};
 
 	template<class T> class instance<T, true>
@@ -262,10 +277,27 @@ namespace utility {
 			return *object;
 		}
 		const T& get() const { return *object; }
+		T* operator->() { return &get(); }
+		const T* operator->() const { return &get(); }
 		operator T&() { return get(); }
 		operator const T&() const { return get(); }
+
+		def_friend_boperator(+);
+		def_friend_boperator(-);
+		def_friend_boperator(*);
+		def_friend_boperator(/);
+		def_friend_boperator(%);
+		def_friend_boperator(+=);
+		def_friend_boperator(-=);
+		def_friend_boperator(*=);
+		def_friend_boperator(/=);
+		def_friend_boperator(%=);
+		def_friend_boperator(<<);
+		def_friend_boperator(>>);
 	};
 
 } // namespace utility
+
+#undef def_friend_boperator
 
 #endif /* INSTANCE_HPP_ */
